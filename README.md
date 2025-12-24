@@ -1,2 +1,0 @@
-# somethingiswrongai
-Dont commit this

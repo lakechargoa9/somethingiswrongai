@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Night Shift - Store 104</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; position: fixed; width: 100%; height: 100%; }
+        #overlay { position: absolute; width: 100%; height: 100%; background: #111; color: #0f0; 
+                   display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: white; z-index: 100; font-weight: bold; }
+        #joystick-zone { position: absolute; bottom: 0; left: 0; width: 100%; height: 50%; z-index: 500; }
+        #visual-joy { position: absolute; bottom: 50px; left: 50px; width: 80px; height: 80px; border: 2px solid #555; border-radius: 50%; pointer-events: none; }
+        #knob { position: absolute; width: 30px; height: 30px; background: #0f0; border-radius: 50%; left: 25px; top: 25px; }
+        button { padding: 20px 50px; font-size: 20px; background: #060; color: white; border: none; border-radius: 5px; box-shadow: 0 0 15px #0f0; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h2 style="letter-spacing: 5px;">NIGHT SHIFT</h2>
+        <p style="color: #888;">Complete 3 tasks. Don't look back.</p>
+        <button id="startBtn">START SHIFT</button>
+    </div>
+    
+    <div id="ui">CURRENT TASK: <span id="taskText">MOP THE SPILL</span></div>
+    
+    <div id="joystick-zone">
+        <div id="visual-joy"><div id="knob"></div></div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        let scene, camera, renderer, monster, clock, pointLight, goal;
+        let moveX = 0, moveZ = 0;
+        let gameActive = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 2); 
+            scene.add(camera);
+
+            pointLight = new THREE.PointLight(0xffffff, 10, 20);
+            pointLight.position.set(0, 3, 0);
+            scene.add(pointLight);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // Create Floor
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshStandardMaterial({color: 0x111111}));
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            // Create Monster (Far away at start)
+            monster = new THREE.Mesh(
+                new THREE.BoxGeometry(0.7, 2.5, 0.2),
+                new THREE.MeshBasicMaterial({color: 0x000000})
+            );
+            monster.position.set(0, 1.25, -15); // Far away!
+            scene.add(monster);
+
+            // Goal Marker (The Task)
+            goal = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({color: 0xffff00}));
+            goal.position.set(-4, 0.5, -4);
+            scene.add(goal);
+
+            clock = new THREE.Clock();
+            setupControls();
+            animate();
+        }
+
+        function setupControls() {
+            const zone = document.getElementById('joystick-zone');
+            const knob = document.getElementById('knob');
+
+            const onMove = (e) => {
+                if (!gameActive) return;
+                const touch = e.touches[0];
+                const rect = document.getElementById('visual-joy').getBoundingClientRect();
+                moveX = (touch.clientX - (rect.left + 40)) / 40;
+                moveZ = (touch.clientY - (rect.top + 40)) / 40;
+                
+                // Limit speed
+                moveX = Math.max(-1, Math.min(1, moveX));
+                moveZ = Math.max(-1, Math.min(1, moveZ));
+                
+                knob.style.transform = `translate(${moveX * 25}px, ${moveZ * 25}px)`;
+            };
+
+            zone.addEventListener('touchstart', onMove);
+            zone.addEventListener('touchmove', onMove);
+            zone.addEventListener('touchend', () => { moveX = 0; moveZ = 0; knob.style.transform = 'translate(0,0)'; });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameActive) return;
+
+            // Player Movement
+            camera.position.z += moveZ * 0.07;
+            camera.position.x += moveX * 0.07;
+            camera.rotation.y -= moveX * 0.03;
+
+            // Monster Logic (Moves toward you slowly)
+            const dist = camera.position.distanceTo(monster.position);
+            if (dist > 2) {
+                const direction = new THREE.Vector3().subVectors(camera.position, monster.position).normalize();
+                monster.position.add(direction.multiplyScalar(0.015));
+            }
+
+            // Task Completion
+            if (camera.position.distanceTo(goal.position) < 1.5) {
+                goal.position.set(4, 0.5, 4); // Move task to next spot
+                document.getElementById('taskText').innerText = "RESTOCK THE SHELF";
+                pointLight.color.set(0xff0000); // Scarier light
+            }
+
+            // Game Over
+            if (dist < 1.0) {
+                gameActive = false;
+                alert("SHIFT TERMINATED. YOU WERE TOO SLOW.");
+                location.reload();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('overlay').style.display = 'none';
+            gameActive = true;
+            init();
+        });
+
+        window.addEventListener('resize', () => {
+            if (camera) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+    </script>
+</body>
+</html>
